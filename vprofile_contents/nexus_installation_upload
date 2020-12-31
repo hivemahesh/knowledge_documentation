@@ -1,0 +1,227 @@
+Nexus Sonatype::
+==============================
+
+. Runs on port: 8081
+. Runs on Java
+. Used to store artifacts
+. Used as a package manager for dependencies
+. Available as opensource & enterprise versions
+. Supports variety of repo like maven, apt,docker etc..
+
+
+Installaiton of Nexus::
+===========================
+
+Step1: Create AWS EC2 of centos with t2.medium
+
+Allow port 8081 in SG
+
+Step2:
+
+a.  yum install java-1.8.0-openjdk-devel wget -y
+
+b. 
+[root@nexus-server ~]# cd /opt
+[root@nexus-server opt]# wget https://download.sonatype.com/nexus/3/latest-unix.tar.gz
+[root@nexus-server opt]# tar -xvzf latest-unix.tar.gz
+
+
+c. Start nexus service--
+
+[root@nexus-server nexus-3.29.1-01]# pwd
+/opt/nexus-3.29.1-01
+
+[root@nexus-server nexus-3.29.1-01]# bin/nexus start   --> if we give bin/nexus run --> it will run in FOREGROUNG, for start it will run in BACKGROUND
+
+[root@nexus-server nexus-3.29.1-01]# bin/nexus status
+nexus is running.
+
+[root@nexus-server opt]# useradd nexus
+
+[root@nexus-server opt]# chown nexus.nexus /opt/nexus-3.29.1-01 -R
+
+[root@nexus-server opt]# chown nexus.nexus /opt/sonatype-work/ -R
+
+[root@nexus-server opt]# vi nexus-3.29.1-01/bin/nexus.rc 
+[root@nexus-server opt]# cat nexus-3.29.1-01/bin/nexus.rc
+run_as_user="nexus"
+
+---------------------------------------
+
+Running nexus as a service**
+______________________
+
+[root@nexus-server opt]# cat /etc/systemd/system/nexus.service
+[Unit]
+Description=nexus service
+After=network.target
+
+[Service]
+Type=forking
+LimitNOFILE=65536
+ExecStart=/opt/nexus-3.29.1-01/bin/nexus start
+ExecStop=/opt/nexus-3.29.1-01/bin/nexus stop
+
+User=nexus
+Restart=on-abort
+
+[Install]
+WantedBy=multi-user.target
+[root@nexus-server opt]#
+
+
+[root@nexus-server opt]# systemctl daemon-reload
+
+[root@nexus-server opt]# systemctl start nexus
+[root@nexus-server opt]# systemctl status nexus
+
+[root@ip-172-31-5-159 opt]# systemctl enable nexus
+
+
+http://18.223.195.94:8081/   admin admin
+
+Repository --> Create Repository --> maven2(hosted)
+
+"vprofile-repo"
+
+====================================================
+
+NOw uploading the artificat to Nexus Sonatype from Jenkins
+
+We shall create 2 jobs on Jenkins
+
+A. Create the artifact and archive it
+B. Take the artifact and upload to Nexus
+
+A.
+======
+
+New JOb--> build-and-archive-artifact-->
+
+SCM: https://github.com/devopshydclub/vprofile-repo.git */vp-rem
+
+Build---> Invoke top-level Maven targets -->  Goals--> install
+
+Post-Build Actions --> Archive the artifacts --> **/*.war
+
+
+Save && Apply --> Build Now
+
+------------------------
+
+B.
+=====
+
+New Job ---> VersionAndUploadToNexus
+
+Need 2 plugins for this job
+
+a. copy the artificat from previous job to this job
+b. copy artifact from this job to Nexus
+
+Jenkins --> Manage Jenkins --> Manage Plugins -->
+
+Copy Artifact --> Adds a build step to copy artifacts from another project
+
+Nexus Artifact Uploader --> This plugin to upload the artifact to Nexus Repository
+
+Install without restart --> 
+
+
+
+To set timestamp for each job, we can set it globally---
+
+Manage Jenkins --> Configure Jenkins --> Global properties -->
+
+Date and Time Pattern---> yy-MM-dd_HHmm ---> Save && Apply
+
+
+VersionAndUploadToNexus job =============> Configure
+
+Build --> Copy artifacts from another project
+
+Projectname= build-and-archive-artificat
+Which build= Latest successfull build
+
+Artifacts to copy= **/*.war
+
+
+Build --> Nexus artifact uploader
+
+Nexus Version=NEXUS3
+Protocol=HTTP
+Nexus URL: 18.223.195.94:8081   {{ no http }}
+Credentials:
+	username: admin	
+	password: admin
+	ID: nexuslogin
+	Description: nexuslogin
+
+GroupId: QA
+Version: V$BUILD_ID
+Repository: vprofile-repo
+
+Artifacts --> Add
+	ArtifactId: $BUILD_TIMESTAMP
+	Type: war
+	File: target/vprofile-v2.war
+	
+Save && Apply
+
+
+Now connect b/w 2 jobs--------------
+
+Go to 1st job: Build-and-archive-artifact
+
+Add post-build actions --> Build other projects: VersionAndUploadToNexus
+
+Save && APply
+
+===============================================================
+
+What if the job fails, or need to notify the developer
+
+So we need to configure SMTP Server****
+
+Jenkins --> Manage Jenkins --> Configure---->
+
+Email Notifacation:
+	SMTP Server: smtp.gmail.com	
+	Deafult suffix: @gmail.com	--> Advanced
+   checkbox Use SMTP Authentication
+
+	username: tmamatha0508@gmail.com
+	password:
+
+	Use SSL: checkbox
+	SMTP Port: 465
+	Test email recipient: tmamatha0508@gmail.com
+
+	  Test configuraiton -->	It failed
+	
+In the mail -> Manage Google accounts --> Security --> 
+
+Less secure app access --> Turn On it ***
+
+Also --> In google chrome --> search for "disable captcha gmail"
+
+and enable it***
+
+
+
+Now in Jenkins check for Test mail -- it was successfully sent*****
+
+Save && Apply
+
+------------------------
+
+Go to any job:: --> Add post build actions --> Email notification
+
+Give mail id 
+
+WE GET THE MAIL ONLY WHEN THE BUILD IS FAILED, SO WE KEEP SOMETHING IN 
+
+"Execute shell" --> adaereteate so that it get failed*** and mail is triggered
+
+
+Now i got the mail too****
